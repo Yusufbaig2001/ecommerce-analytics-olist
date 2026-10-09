@@ -1,61 +1,67 @@
-# Power BI Dashboard — E-Commerce Analytics (Olist)
+# E-Commerce Analytics — Olist Dataset
 
-Interactive 3-page dashboard analyzing 100K+ e-commerce orders.
+End-to-end data analytics project analyzing **100K+ orders** from the Brazilian E-Commerce Public Dataset (Olist). Covers the full analyst workflow — from raw CSV to SQL database, business queries, and an interactive Power BI dashboard.
 
-## 📊 Dashboard Pages
+## 📊 Power BI Dashboard
 
-### Page 1 — Executive Overview
-![Executive Overview](page1_executive.png)
+![Executive Overview](powerbi_dashboard/page1_executive.png)
 
-**Key metrics:**
-- Total Orders: 99K
-- Total Revenue: R$ 16.01M
-- Total Customers: 96K
-- Avg Order Value: R$ 160.99
-- Avg Review Score: 4.09
+An interactive 3-page dashboard built on this dataset.
 
-**Visuals:** Monthly order trend, Top 10 product categories by revenue.
+**Pages:**
+- **Executive Overview** — KPIs, monthly trends, top categories
+- **Customer Analytics** — Geographic distribution, repeat customer analysis
+- **Operations Analytics** — Delivery performance, seller analysis
 
----
+**Built with:** SQL (MySQL) · Power BI · DAX · Power Query
 
-### Page 2 — Customer Analytics
-![Customer Analytics](page2_customers.png)
-
-**Key insights:**
-- São Paulo (SP) has the highest customer concentration
-- Only 3% of customers are repeat buyers — retention opportunity
-- São Paulo city alone has ~15K customers
-
-**Visuals:** Brazil map, Top 10 cities bar chart, Repeat vs One-Time customer donut.
+📂 [View the full dashboard documentation →](powerbi_dashboard/README.md)
 
 ---
 
-### Page 3 — Operations Analytics
-![Operations Analytics](page3_operations.png)
+## 📋 Business Problem
 
-**Key insights:**
-- 97% of orders successfully delivered
-- Late delivery rate: 7.87%
-- AL (Alagoas) and MA (Maranhão) states have highest late delivery rates
-- Top sellers handle ~2,000 orders each
+Analyze an e-commerce dataset to uncover revenue drivers, customer behavior, delivery performance, and seller quality — enabling data-driven decisions.
 
-**Visuals:** KPI cards, Late % by state, Order status donut, Top sellers chart.
+## 🎯 Objectives
 
----
+- Build a relational database from 9 raw CSVs
+- Clean and validate 1.5M+ rows
+- Write 30+ business analysis queries in SQL
+- Build a 3-page Power BI dashboard for executives
 
-## 🛠️ Built With
+## 🛠️ Tools Used
 
-- **Power BI Desktop**
-- **DAX** for measures
-- **Power Query** for data cleaning
+- **MySQL** — database design, cleaning, 30+ analysis queries
+- **Power BI** — interactive dashboard
+- **Power Query** — data transformation
+- **DAX** — calculated measures
 
-## 📁 Files
+## 🗄️ Database Schema
 
-| File | Description |
-|------|-------------|
-| `page1_executive.png` | Executive Overview screenshot |
-| `page2_customers.png` | Customer Analytics screenshot |
-| `page3_operations.png` | Operations Analytics screenshot |
+9 tables, ~1.5M rows total:
+
+`customers` · `orders` · `order_items` · `order_payments` · `order_reviews` · `products` · `sellers` · `geolocation` · `product_category_translation`
+
+## 🔍 Key SQL Techniques Used
+
+- Joins (INNER, LEFT) across 4+ tables
+- Window functions (RANK, LAG, ROW_NUMBER)
+- Common Table Expressions (CTEs)
+- Conditional aggregation (CASE WHEN + SUM)
+- Subqueries and correlated subqueries
+- Date functions and month-over-month analysis
+- Fan-out-aware querying (order vs payment grain)
+
+## 📊 Key Business Insights
+
+- **Total revenue: R$ 16.01M** across 99K orders
+- **Health & Beauty and Watches** categories lead revenue
+- **São Paulo (SP)** dominates customer concentration (42% of customers)
+- **Only 3% of customers are repeat buyers** — major retention opportunity
+- **Late delivery rate: 7.87%** — highest in remote northeastern states
+- **97% of orders successfully delivered**
+
 
 ## 👤 Author
 

@@ -42,6 +42,12 @@ Interactive 3-page dashboard analyzing 100K+ e-commerce orders.
 **Visuals:** KPI cards, Late % by state, Order status donut, Top sellers chart.
 
 ---
+### Page 4 — Management Insights
+![Management Insights](page4_insights.png)
+
+**Executive summary** with key findings, operational issues, and 5 prioritized recommendations covering retention, logistics, and category strategy.
+
+---
 
 ## 🛠️ Built With
 
@@ -56,6 +62,7 @@ Interactive 3-page dashboard analyzing 100K+ e-commerce orders.
 | `page1_executive.png` | Executive Overview |
 | `page2_customers.png` | Customer Analytics |
 | `page3_operations.png` | Operations Analytics |
+| `page4_insights.png` | Management Insights |
 
 > Note: The source `.pbix` file is available on request (exceeds GitHub size limit).
 

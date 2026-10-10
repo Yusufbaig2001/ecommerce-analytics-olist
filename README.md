@@ -16,6 +16,7 @@ An interactive 3-page dashboard built on this dataset.
 **Built with:** SQL (MySQL) · Power BI · DAX · Power Query
 
 📂 [View the full dashboard documentation →](powerbi_dashboard/README.md)
+📄 [View the full project report (PDF) →](Documentation/Project_Report.pdf)
 
 ---
 

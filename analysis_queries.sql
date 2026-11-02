@@ -1,11 +1,13 @@
-create database ecommerce_olist;
 
+CREATE DATABASE IF NOT EXISTS ecommerce_olist;
 USE ecommerce_olist;
 
--- ============================================
--- 1. CUSTOMERS
--- ============================================
-CREATE TABLE customers (
+-- ============================================================
+-- SECTION 1: DATABASE SCHEMA
+-- Run this section once, before importing CSV data.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS customers (
     customer_id VARCHAR(50) PRIMARY KEY,
     customer_unique_id VARCHAR(50),
     customer_zip_code_prefix INT,
@@ -13,10 +15,7 @@ CREATE TABLE customers (
     customer_state CHAR(2)
 );
 
--- ============================================
--- 2. GEOLOCATION
--- ============================================
-CREATE TABLE geolocation (
+CREATE TABLE IF NOT EXISTS geolocation (
     geolocation_zip_code_prefix INT,
     geolocation_lat DECIMAL(10, 7),
     geolocation_lng DECIMAL(10, 7),
@@ -24,20 +23,14 @@ CREATE TABLE geolocation (
     geolocation_state CHAR(2)
 );
 
--- ============================================
--- 3. SELLERS
--- ============================================
-CREATE TABLE sellers (
+CREATE TABLE IF NOT EXISTS sellers (
     seller_id VARCHAR(50) PRIMARY KEY,
     seller_zip_code_prefix INT,
     seller_city VARCHAR(100),
     seller_state CHAR(2)
 );
 
--- ============================================
--- 4. PRODUCTS
--- ============================================
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
     product_id VARCHAR(50) PRIMARY KEY,
     product_category_name VARCHAR(100),
     product_name_lenght INT,
@@ -49,18 +42,12 @@ CREATE TABLE products (
     product_width_cm DECIMAL(10, 2)
 );
 
--- ============================================
--- 5. PRODUCT CATEGORY TRANSLATION
--- ============================================
-CREATE TABLE product_category_translation (
+CREATE TABLE IF NOT EXISTS product_category_translation (
     product_category_name VARCHAR(100) PRIMARY KEY,
     product_category_name_english VARCHAR(100)
 );
 
--- ============================================
--- 6. ORDERS
--- ============================================
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
     order_id VARCHAR(50) PRIMARY KEY,
     customer_id VARCHAR(50),
     order_status VARCHAR(20),
@@ -71,10 +58,7 @@ CREATE TABLE orders (
     order_estimated_delivery_date DATETIME
 );
 
--- ============================================
--- 7. ORDER ITEMS
--- ============================================
-CREATE TABLE order_items (
+CREATE TABLE IF NOT EXISTS order_items (
     order_id VARCHAR(50),
     order_item_id INT,
     product_id VARCHAR(50),
@@ -85,10 +69,7 @@ CREATE TABLE order_items (
     PRIMARY KEY (order_id, order_item_id)
 );
 
--- ============================================
--- 8. ORDER PAYMENTS
--- ============================================
-CREATE TABLE order_payments (
+CREATE TABLE IF NOT EXISTS order_payments (
     order_id VARCHAR(50),
     payment_sequential INT,
     payment_type VARCHAR(30),
@@ -96,11 +77,8 @@ CREATE TABLE order_payments (
     payment_value DECIMAL(10, 2),
     PRIMARY KEY (order_id, payment_sequential)
 );
-DROP TABLE IF EXISTS order_reviews;
--- ============================================
--- 9. ORDER REVIEWS
--- ============================================
-CREATE TABLE order_reviews (
+
+CREATE TABLE IF NOT EXISTS order_reviews (
     review_id VARCHAR(50),
     order_id VARCHAR(50),
     review_score INT,
@@ -111,421 +89,695 @@ CREATE TABLE order_reviews (
     PRIMARY KEY (review_id, order_id)
 );
 
-SELECT COUNT(*) AS total_rows FROM geolocation;
+/*
+PAUSE HERE AND IMPORT YOUR CSV FILES INTO THE TABLES ABOVE.
+The remaining sections assume the tables contain the Olist dataset.
+*/
 
--- Count distinct rows
-SELECT COUNT(*) AS distinct_rows FROM (
-    SELECT DISTINCT geolocation_zip_code_prefix, geolocation_lat, 
-                    geolocation_lng, geolocation_city, geolocation_state
+-- ============================================================
+-- SECTION 2: DATA QUALITY CHECKS
+-- ============================================================
+
+-- 2.1 Check row counts in the main tables.
+SELECT 'customers' AS table_name, COUNT(*) AS total_rows FROM customers
+UNION ALL SELECT 'geolocation', COUNT(*) FROM geolocation
+UNION ALL SELECT 'sellers', COUNT(*) FROM sellers
+UNION ALL SELECT 'products', COUNT(*) FROM products
+UNION ALL SELECT 'orders', COUNT(*) FROM orders
+UNION ALL SELECT 'order_items', COUNT(*) FROM order_items
+UNION ALL SELECT 'order_payments', COUNT(*) FROM order_payments
+UNION ALL SELECT 'order_reviews', COUNT(*) FROM order_reviews;
+
+-- 2.2 Check duplicate geolocation records.
+SELECT COUNT(*) AS total_rows
+FROM geolocation;
+
+SELECT COUNT(*) AS distinct_rows
+FROM (
+    SELECT DISTINCT
+        geolocation_zip_code_prefix,
+        geolocation_lat,
+        geolocation_lng,
+        geolocation_city,
+        geolocation_state
     FROM geolocation
-) t;
+) AS distinct_geolocation;
 
--- How many products have missing category?
-SELECT COUNT(*) AS missing_category 
-FROM products 
-WHERE product_category_name IS NULL 
-   OR product_category_name = '';
-   
-   -- Orders with no matching customer?
+-- 2.3 Check missing or blank product categories.
+SELECT COUNT(*) AS products_with_missing_category
+FROM products
+WHERE product_category_name IS NULL
+   OR TRIM(product_category_name) = '';
+
+-- 2.4 Check orders without a matching customer.
 SELECT COUNT(*) AS orphan_orders
 FROM orders o
-LEFT JOIN customers c ON o.customer_id = c.customer_id
+LEFT JOIN customers c
+    ON o.customer_id = c.customer_id
 WHERE c.customer_id IS NULL;
 
--- Order items with no matching product?
-SELECT COUNT(*) AS orphan_items
+-- 2.5 Check order items without a matching product.
+SELECT COUNT(*) AS orphan_product_items
 FROM order_items oi
-LEFT JOIN products p ON oi.product_id = p.product_id
+LEFT JOIN products p
+    ON oi.product_id = p.product_id
 WHERE p.product_id IS NULL;
 
--- Order items with no matching seller?
-SELECT COUNT(*) AS orphan_sellers
+-- 2.6 Check order items without a matching seller.
+SELECT COUNT(*) AS orphan_seller_items
 FROM order_items oi
-LEFT JOIN sellers s ON oi.seller_id = s.seller_id
+LEFT JOIN sellers s
+    ON oi.seller_id = s.seller_id
 WHERE s.seller_id IS NULL;
 
-select * from products;
+-- 2.7 Check order items without a matching order.
+SELECT COUNT(*) AS orphan_order_items
+FROM order_items oi
+LEFT JOIN orders o
+    ON oi.order_id = o.order_id
+WHERE o.order_id IS NULL;
 
-set sql_safe_updates = 0;
+-- 2.8 Check missing product dimensions before cleaning.
+SELECT
+    COUNT(*) AS products_with_missing_dimensions
+FROM products
+WHERE product_weight_g IS NULL
+   OR product_length_cm IS NULL
+   OR product_height_cm IS NULL
+   OR product_width_cm IS NULL;
 
--- Products table null values cleared--
-update products
-set product_category_name = 'uncategorized'
-where product_category_name is null or product_category_name = ' ';
+-- ============================================================
+-- SECTION 3: DATA CLEANING
+-- Review the checks above before applying these changes.
+-- ============================================================
 
--- new table with only distinct rows--
-CREATE TABLE geolocation_clean AS
-SELECT DISTINCT * FROM geolocation;
-
---  Verify the count--
-SELECT COUNT(*) FROM geolocation_clean;
-
--- Drop old table--
-DROP TABLE geolocation;
-
--- Rename new table to original name
-RENAME TABLE geolocation_clean TO geolocation;
-
--- Verify--
-SELECT COUNT(*) FROM geolocation;
-
-
-select * from products 
-where product_weight_g is null 
-or product_length_cm is null
-or product_height_cm is null
-or product_width_cm is null;
-
--- for products null values we can replace it by median--
-
-with ranked as (
-select product_weight_g,
-row_number() over(order by product_weight_g) as rn,
-count(*) over() as total
-from products
-where product_weight_g is not null
-)
-select avg(product_weight_g) as median_weight
-from ranked 
-where rn in (floor((total+1)/2), ceil((total+1)/2));
-
-with ranked as (
-select product_length_cm,
-row_number() over(order by product_length_cm) as rn,
-count(*) over() as total
-from products
-where product_length_cm is not null
-)
-select avg(product_length_cm) as median_length
-from ranked 
-where rn in (floor((total+1)/2),ceil((total+1)/2));
-
-with ranked as (
-select product_height_cm,
-row_number() over(order by product_height_cm) as rn,
-count(*) over() as total
-from products
-where product_height_cm is not null
-)
-select avg(product_height_cm) as median_length
-from ranked 
-where rn in (floor((total+1)/2),ceil((total+1)/2));
-
-with ranked as (
-select product_width_cm,
-row_number() over(order by product_width_cm) as rn,
-count(*) over() as total
-from products
-where product_width_cm is not null
-)
-select avg(product_width_cm) as median_length
-from ranked 
-where rn in (floor((total+1)/2),ceil((total+1)/2));
-
--- the median values is inserted inplace of null values--
+-- 3.1 Standardize missing product categories.
 UPDATE products
+SET product_category_name = 'uncategorized'
+WHERE product_category_name IS NULL
+   OR TRIM(product_category_name) = '';
+
+-- 3.2 Remove exact duplicate geolocation records without dropping the table.
+CREATE TEMPORARY TABLE geolocation_deduplicated AS
+SELECT DISTINCT
+    geolocation_zip_code_prefix,
+    geolocation_lat,
+    geolocation_lng,
+    geolocation_city,
+    geolocation_state
+FROM geolocation;
+
+TRUNCATE TABLE geolocation;
+
+INSERT INTO geolocation (
+    geolocation_zip_code_prefix,
+    geolocation_lat,
+    geolocation_lng,
+    geolocation_city,
+    geolocation_state
+)
+SELECT
+    geolocation_zip_code_prefix,
+    geolocation_lat,
+    geolocation_lng,
+    geolocation_city,
+    geolocation_state
+FROM geolocation_deduplicated;
+
+DROP TEMPORARY TABLE geolocation_deduplicated;
+
+-- 3.3 Calculate actual medians for missing product dimensions.
+-- This avoids assuming that fixed values are the medians for every dataset.
+CREATE TEMPORARY TABLE product_dimension_medians AS
+SELECT
+    (
+        SELECT AVG(product_weight_g)
+        FROM (
+            SELECT
+                product_weight_g,
+                ROW_NUMBER() OVER (ORDER BY product_weight_g) AS rn,
+                COUNT(*) OVER () AS total_rows
+            FROM products
+            WHERE product_weight_g IS NOT NULL
+        ) AS ranked_weight
+        WHERE rn IN (FLOOR((total_rows + 1) / 2), CEIL((total_rows + 1) / 2))
+    ) AS median_weight_g,
+    (
+        SELECT AVG(product_length_cm)
+        FROM (
+            SELECT
+                product_length_cm,
+                ROW_NUMBER() OVER (ORDER BY product_length_cm) AS rn,
+                COUNT(*) OVER () AS total_rows
+            FROM products
+            WHERE product_length_cm IS NOT NULL
+        ) AS ranked_length
+        WHERE rn IN (FLOOR((total_rows + 1) / 2), CEIL((total_rows + 1) / 2))
+    ) AS median_length_cm,
+    (
+        SELECT AVG(product_height_cm)
+        FROM (
+            SELECT
+                product_height_cm,
+                ROW_NUMBER() OVER (ORDER BY product_height_cm) AS rn,
+                COUNT(*) OVER () AS total_rows
+            FROM products
+            WHERE product_height_cm IS NOT NULL
+        ) AS ranked_height
+        WHERE rn IN (FLOOR((total_rows + 1) / 2), CEIL((total_rows + 1) / 2))
+    ) AS median_height_cm,
+    (
+        SELECT AVG(product_width_cm)
+        FROM (
+            SELECT
+                product_width_cm,
+                ROW_NUMBER() OVER (ORDER BY product_width_cm) AS rn,
+                COUNT(*) OVER () AS total_rows
+            FROM products
+            WHERE product_width_cm IS NOT NULL
+        ) AS ranked_width
+        WHERE rn IN (FLOOR((total_rows + 1) / 2), CEIL((total_rows + 1) / 2))
+    ) AS median_width_cm;
+
+-- Inspect the calculated medians before updating missing values.
+SELECT * FROM product_dimension_medians;
+
+-- Replace only NULL dimension values; preserve all existing non-NULL values.
+UPDATE products p
+CROSS JOIN product_dimension_medians m
 SET
-    product_weight_g = COALESCE(product_weight_g, 700),
-    product_length_cm = COALESCE(product_length_cm, 25),
-    product_height_cm = COALESCE(product_height_cm, 13),
-    product_width_cm = COALESCE(product_width_cm, 20)
-WHERE
-    product_weight_g IS NULL
-    OR product_length_cm IS NULL
-    OR product_height_cm IS NULL
-    OR product_width_cm IS NULL;
+    p.product_weight_g = COALESCE(p.product_weight_g, m.median_weight_g),
+    p.product_length_cm = COALESCE(p.product_length_cm, m.median_length_cm),
+    p.product_height_cm = COALESCE(p.product_height_cm, m.median_height_cm),
+    p.product_width_cm = COALESCE(p.product_width_cm, m.median_width_cm)
+WHERE p.product_weight_g IS NULL
+   OR p.product_length_cm IS NULL
+   OR p.product_height_cm IS NULL
+   OR p.product_width_cm IS NULL;
 
--- in products table the column name has spellig mistake length ---
-alter table products 
-rename column product_name_lenght to product_name_length;
-alter table products 
-rename column product_description_lenght to product_description_length;
-select * from products;
+DROP TEMPORARY TABLE product_dimension_medians;
 
--- adding foreign key to enforce relationships -- 
-alter table orders 
-ADD CONSTRAINT fk_orders_customer
-FOREIGN KEY (customer_id) REFERENCES customers(customer_id);
-alter table order_items
-add constraint fk_order_items_orders
-foreign key (order_id)references orders(order_id);
-alter table order_items
-add constraint fk_order_items_product
-foreign key (product_id)references products(product_id);
-alter table order_items
-add constraint fk_order_items_sellers
-foreign key (seller_id)references sellers(seller_id);
-alter table order_payments
-add constraint fk_order_payments_orders
-foreign key (order_id)references orders(order_id);
-alter table order_reviews
-add constraint fk_order_reviews_orders
-foreign key (order_id)references orders(order_id);
+-- 3.4 Verify that product dimensions no longer contain NULL values.
+SELECT COUNT(*) AS products_with_missing_dimensions_after_cleaning
+FROM products
+WHERE product_weight_g IS NULL
+   OR product_length_cm IS NULL
+   OR product_height_cm IS NULL
+   OR product_width_cm IS NULL;
 
--- ============================================
--- Query 1: Monthly Order Trend
--- Business Question: How many orders were placed each month?
--- ============================================
-select date_format(order_purchase_timestamp, '%Y-%m') as month,
-count(*) as order_count
-from orders
-where order_status = 'delivered'
-group by date_format(order_purchase_timestamp, "%Y-%m") 
-order by month;
+-- 3.5 Correct misspelled product column names, if they still exist.
+-- Run these ALTER statements only once. If you already renamed these columns,
+-- do not run these two statements again.
+-- ALTER TABLE products RENAME COLUMN product_name_lenght TO product_name_length;
+-- ALTER TABLE products RENAME COLUMN product_description_lenght TO product_description_length;
 
--- Which product categories have the highest order volume (most items sold)?--
+-- ============================================================
+-- SECTION 4: FOREIGN KEY RELATIONSHIPS
+-- Run once, after orphan checks return zero for the relevant tables.
+-- If these constraints already exist, skip this entire section.
+-- ============================================================
 
-with prd as (
-select p.product_category_name, count(*) as total_items_sold
-from products p
-join order_items ot 
-on p.product_id = ot.product_id
-group by p.product_category_name)
-select pct.product_category_name_english,p.total_items_sold
-from product_category_translation pct 
-join prd p
-on pct.product_category_name = p.product_category_name
-order by p.total_items_sold desc 
-limit 10; 
+ALTER TABLE orders
+    ADD CONSTRAINT fk_orders_customer
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id);
 
--- Which states have the highest customer concentration? --
+ALTER TABLE order_items
+    ADD CONSTRAINT fk_order_items_orders
+    FOREIGN KEY (order_id) REFERENCES orders(order_id);
 
-select  customer_state,count(*) as customer_count
-from customers
-group by customer_state
-order by customer_count desc;
+ALTER TABLE order_items
+    ADD CONSTRAINT fk_order_items_product
+    FOREIGN KEY (product_id) REFERENCES products(product_id);
 
--- What is the average order value (AOV) across all orders? --
+ALTER TABLE order_items
+    ADD CONSTRAINT fk_order_items_sellers
+    FOREIGN KEY (seller_id) REFERENCES sellers(seller_id);
 
-select sum(payment_value)/count(distinct order_id) as average_order_value
-from order_payments;
+ALTER TABLE order_payments
+    ADD CONSTRAINT fk_order_payments_orders
+    FOREIGN KEY (order_id) REFERENCES orders(order_id);
 
--- What is the average delivery time in days (from purchase to customer delivery)? --
+ALTER TABLE order_reviews
+    ADD CONSTRAINT fk_order_reviews_orders
+    FOREIGN KEY (order_id) REFERENCES orders(order_id);
 
-select avg(datediff(order_delivered_customer_date, order_purchase_timestamp)) as avg_delivery_days
-from orders
-where order_status= 'delivered';
+-- ============================================================
+-- SECTION 5: BUSINESS ANALYSIS QUERIES
+-- ============================================================
 
--- What is the late delivery percentage? --
+-- QUERY 1
+-- Business Question: How many orders were placed in each month?
+SELECT
+    DATE_FORMAT(order_purchase_timestamp, '%Y-%m') AS order_month,
+    COUNT(*) AS total_orders
+FROM orders
+GROUP BY DATE_FORMAT(order_purchase_timestamp, '%Y-%m')
+ORDER BY order_month;
 
-select count(*) as total_delivered,
-sum(case when  order_delivered_customer_date > order_estimated_delivery_date then 1 else 0 end) as late_orders,
-round((sum(case when  order_delivered_customer_date > order_estimated_delivery_date then 1 else 0 end) *100.0/count(*)),2) as late_pct
-from orders
-where order_status = 'delivered';
+-- QUERY 2
+-- Business Question: Which product categories have the highest item sales volume?
+SELECT
+    COALESCE(pct.product_category_name_english, p.product_category_name) AS product_category,
+    COUNT(*) AS total_items_sold
+FROM order_items oi
+JOIN products p
+    ON oi.product_id = p.product_id
+LEFT JOIN product_category_translation pct
+    ON p.product_category_name = pct.product_category_name
+GROUP BY COALESCE(pct.product_category_name_english, p.product_category_name)
+ORDER BY total_items_sold DESC
+LIMIT 10;
 
--- Which sellers have poor customer ratings (average review score below 3)? --
-select avg(o.review_score) as avg_review_score, ot.seller_id , count(o.review_score) as total_reviews
-from order_reviews o 
-join order_items ot 
-on o.order_id = ot.order_id
-group by ot.seller_id
-having count(o.review_score) > 5 and avg(o.review_score) < 3
-order by avg_review_score asc;
+-- QUERY 3
+-- Business Question: Which states have the highest number of unique customers?
+-- customer_unique_id identifies a person across multiple customer_id records.
+SELECT
+    customer_state,
+    COUNT(DISTINCT customer_unique_id) AS unique_customer_count
+FROM customers
+GROUP BY customer_state
+ORDER BY unique_customer_count DESC;
 
--- Which payment methods are most frequently used? --
+-- QUERY 4
+-- Business Question: What is the average order value across all recorded payments?
+-- AOV = total payment value / number of distinct paid orders.
+SELECT
+    ROUND(SUM(payment_value) / NULLIF(COUNT(DISTINCT order_id), 0), 2) AS average_order_value
+FROM order_payments;
 
-select payment_type,count(*) as usage_count
-from order_payments
-group by payment_type
-order by usage_count desc;
+-- QUERY 5
+-- Business Question: What is the average delivery time in days for delivered orders?
+-- Uses elapsed time, including partial days.
+SELECT
+    ROUND(AVG(TIMESTAMPDIFF(SECOND, order_purchase_timestamp,
+                            order_delivered_customer_date) / 86400), 2) AS avg_delivery_days
+FROM orders
+WHERE order_status = 'delivered'
+  AND order_purchase_timestamp IS NOT NULL
+  AND order_delivered_customer_date IS NOT NULL;
 
--- Which product categories have the worst average review scores? --
+-- QUERY 6
+-- Business Question: What percentage of delivered orders arrived later than estimated?
+SELECT
+    COUNT(*) AS total_delivered_orders,
+    SUM(CASE
+            WHEN order_delivered_customer_date > order_estimated_delivery_date THEN 1
+            ELSE 0
+        END) AS late_orders,
+    ROUND(
+        100.0 * SUM(CASE
+                        WHEN order_delivered_customer_date > order_estimated_delivery_date THEN 1
+                        ELSE 0
+                    END) / NULLIF(COUNT(*), 0),
+        2
+    ) AS late_delivery_percentage
+FROM orders
+WHERE order_status = 'delivered'
+  AND order_delivered_customer_date IS NOT NULL
+  AND order_estimated_delivery_date IS NOT NULL;
 
-select avg(o.review_score) as avg_review_score, count(o.review_score) as total_reviews, pct.product_category_name_english
-from order_reviews o
-join order_items ot on o.order_id = ot.order_id
-join products p on ot.product_id=p.product_id
-join product_category_translation pct on p.product_category_name= pct.product_category_name
-group by pct.product_category_name_english
-having count(o.review_score) > 50
-order by avg_review_score asc
-limit 10 ;
-
--- Which cities have the most customers? --
-
-select customer_city, count(*) as customer_count 
-from customers
-group by customer_city
-order by count(*) desc
-limit 10;
-
--- What is the monthly revenue trend? (Sum of payments per month) --
-
-select date_format(o.order_purchase_timestamp, '%Y-%m') as month, sum(op.payment_value) as total_revenue
-from orders o
-join order_payments op
-on o.order_id = op.order_id
-group by date_format(o.order_purchase_timestamp, '%Y-%m') 
-order by month asc;
-
--- Which product categories generate the most revenue? --
-
-select pct.product_category_name_english, sum(oi.price) as total_revenue
-from order_items oi
-join products p on oi.product_id = p.product_id
-join product_category_translation pct on pct.product_category_name = p.product_category_name
-group by  pct.product_category_name_english 
-order by total_revenue desc
-limit 10;
-
--- What is the average review score per product category (English names), sorted from best to worst? --
-
-select pct.product_category_name_english , avg(r.review_score) as avg_review_score, count(r.review_score) as total_reviews
-from order_reviews r	
-join order_items ot
-on r.order_id=ot.order_id
-join products p on p.product_id= ot.product_id
-join product_category_translation pct on pct.product_category_name = p.product_category_name
-group by  pct.product_category_name_english
-having total_reviews >100 
-order by avg_review_score desc;
-
--- What is the average number of items per order? --
-
-select count(*)/ count(distinct order_id) as avg_items_per_order
-from order_items;
-
---  What is the repeat customer percentage? --
-
-with customer_orders as (
-select c.customer_unique_id, count(o.order_id) as order_count
-from orders o 
-join customers c
-on c.customer_id = o.customer_id
-group by c.customer_unique_id
+-- QUERY 7
+-- Business Question: Which sellers are associated with low average order review scores?
+-- Reviews belong to orders, not individual sellers. One order review can be associated
+-- with each seller present in that order. Duplicate seller/order item rows are removed.
+WITH seller_orders AS (
+    SELECT DISTINCT seller_id, order_id
+    FROM order_items
+),
+seller_reviews AS (
+    SELECT
+        so.seller_id,
+        so.order_id,
+        r.review_score
+    FROM seller_orders so
+    JOIN order_reviews r
+        ON so.order_id = r.order_id
+    WHERE r.review_score IS NOT NULL
 )
-select count(*) as total_customers,
-sum(case when order_count > 1 then 1  else 0 end) as repeat_customers,
-round((sum(case when order_count > 1 then 1  else 0 end))*100.0/count(*),2) as repeat_pct
-from customer_orders;
+SELECT
+    seller_id,
+    ROUND(AVG(review_score), 2) AS avg_order_review_score,
+    COUNT(*) AS reviewed_orders
+FROM seller_reviews
+GROUP BY seller_id
+HAVING COUNT(*) > 5
+   AND AVG(review_score) < 3
+ORDER BY avg_order_review_score ASC;
 
--- For each month, show total orders and total revenue side by side. --
+-- QUERY 8
+-- Business Question: Which payment types have the highest number of payment records?
+-- This counts payment records, not unique orders. An order can have multiple payment records.
+SELECT
+    payment_type,
+    COUNT(*) AS payment_record_count,
+    ROUND(SUM(payment_value), 2) AS total_payment_value
+FROM order_payments
+GROUP BY payment_type
+ORDER BY payment_record_count DESC;
 
-select date_format(o.order_purchase_timestamp, '%Y-%m') as month, sum(op.payment_value) as total_revenue, count(distinct op.order_id) as total_orders
-from orders o 
-join order_payments op
-on o.order_id = op.order_id
-group by date_format(o.order_purchase_timestamp, '%Y-%m')
-order by month asc;
-
--- Who are the top 10 customers by total spend?--
-
-select c.customer_unique_id, sum(op.payment_value) as total_spend, count(distinct op.order_id) as total_order
-from customers c 
-join orders o on c.customer_id = o.customer_id 
-join order_payments op on o.order_id = op.order_id
-group by c.customer_unique_id
-order by total_spend desc
-limit 10 ;
-
--- Which 10 sellers have the most orders? --
-
-select seller_id, count(distinct order_id) as order_count, sum(price + freight_value) as total_revenue
-from order_items 
-group by seller_id
-order by order_count desc 
-limit 10;
-
--- What is the average review score per month (trend over time)? --
-
-select date_format(review_creation_date, '%Y-%m')  as month, avg(review_score) as avg_review_score
-from order_reviews
-group by date_format(review_creation_date, '%Y-%m') 
-order by month asc;
-
--- Which 5 states have the highest late delivery percentage? -- 
-
-select c.customer_state,count(*) as total_delivered, 
-sum(case when order_estimated_delivery_date < order_delivered_customer_date then 1 else 0 end) as late_orders,
-round((sum(case when order_estimated_delivery_date < order_delivered_customer_date then 1 else 0 end))*100.0/count(*),2) as late_pct
-from customers c
-join orders o 
-on c.customer_id = o.customer_id
-where o.order_status = 'delivered' and order_delivered_customer_date is not null
-group by c.customer_state
-order by late_pct desc
-limit 5 ;
-
--- What is the average freight value per state? --
-
-select c.customer_state, avg(oi.freight_value) as avg_freight_value 
-from order_items oi 
-join orders o on o.order_id=oi.order_id
-join customers c on c.customer_id = o.customer_id
-group by c.customer_state
-order by avg_freight_value desc ;
-
--- What is the monthly average order value (AOV) in 2017? -- 
-
-select date_format(o.order_purchase_timestamp, '%Y-%m') as month,
-sum(op.payment_value)/count(distinct op.order_id) as aov
-from order_payments op 
-join orders o
-on o.order_id = op.order_id
-where year(order_purchase_timestamp) = 2017
-group by date_format(o.order_purchase_timestamp, '%Y-%m') 
-order by month asc;
-
--- Which product categories have the highest average price per item? --
-
-select pct.product_category_name_english, avg(oi.price) as avg_price , count(*) as total_items
-from order_items oi
-join products p 
-on oi.product_id = p.product_id
-join product_category_translation pct 
-on pct.product_category_name = p.product_category_name 
-group by pct.product_category_name_english
-having count(*)  > 50 
-order by avg_price desc
-limit 10;
-
--- Which customers have placed orders in 2 or more different months? (Loyalty / repeat behavior across time) -- 
-
-with customer_months as (
-select customer_unique_id,
-count(distinct date_format(order_purchase_timestamp, '%Y-%m')) as months_active,
-count(distinct o.order_id) as order_count
-from customers c
-join orders o 
-on c.customer_id = o.customer_id
-group by customer_unique_id
+-- QUERY 9
+-- Business Question: Which product categories have the lowest average order review scores?
+-- Each order is counted once per category, even if it contains multiple items in that category.
+-- An order-level review may be associated with more than one category if the order contains several categories.
+WITH category_orders AS (
+    SELECT DISTINCT
+        p.product_category_name,
+        oi.order_id
+    FROM order_items oi
+    JOIN products p
+        ON oi.product_id = p.product_id
+),
+category_reviews AS (
+    SELECT
+        co.product_category_name,
+        r.order_id,
+        r.review_score
+    FROM category_orders co
+    JOIN order_reviews r
+        ON co.order_id = r.order_id
+    WHERE r.review_score IS NOT NULL
 )
-select customer_unique_id, months_active,order_count
-from customer_months
-where months_active >= 2
-order by months_active desc, order_count desc
-limit 10;
+SELECT
+    COALESCE(pct.product_category_name_english, cr.product_category_name) AS product_category,
+    ROUND(AVG(cr.review_score), 2) AS avg_order_review_score,
+    COUNT(*) AS reviewed_orders
+FROM category_reviews cr
+LEFT JOIN product_category_translation pct
+    ON cr.product_category_name = pct.product_category_name
+GROUP BY COALESCE(pct.product_category_name_english, cr.product_category_name)
+HAVING COUNT(*) > 50
+ORDER BY avg_order_review_score ASC
+LIMIT 10;
 
---  Top 5 sellers with best avg ratings (min 20 reviews) -- 
+-- QUERY 10
+-- Business Question: Which 10 cities have the most unique customers?
+SELECT
+    customer_city,
+    customer_state,
+    COUNT(DISTINCT customer_unique_id) AS unique_customer_count
+FROM customers
+GROUP BY customer_city, customer_state
+ORDER BY unique_customer_count DESC
+LIMIT 10;
 
-select oi.seller_id, avg(r.review_score) as avg_review_rating , count(distinct oi.order_id) as order_count
-from order_items oi
-join order_reviews r
-on oi.order_id=r.order_id
-group by oi.seller_id
-having count(distinct oi.order_id) >=20
-order by avg_review_rating desc 
-limit 5; 
+-- QUERY 11
+-- Business Question: What is the monthly trend in total recorded customer payments?
+-- This is payment value grouped by purchase month, not accounting profit.
+SELECT
+    DATE_FORMAT(o.order_purchase_timestamp, '%Y-%m') AS purchase_month,
+    ROUND(SUM(op.payment_value), 2) AS total_payment_value
+FROM orders o
+JOIN order_payments op
+    ON o.order_id = op.order_id
+GROUP BY DATE_FORMAT(o.order_purchase_timestamp, '%Y-%m')
+ORDER BY purchase_month;
 
---  Customers who registered but never placed an order --
+-- QUERY 12
+-- Business Question: Which product categories generate the highest merchandise revenue?
+-- Revenue here is item price only; freight is excluded.
+SELECT
+    COALESCE(pct.product_category_name_english, p.product_category_name) AS product_category,
+    ROUND(SUM(oi.price), 2) AS merchandise_revenue
+FROM order_items oi
+JOIN products p
+    ON oi.product_id = p.product_id
+LEFT JOIN product_category_translation pct
+    ON p.product_category_name = pct.product_category_name
+GROUP BY COALESCE(pct.product_category_name_english, p.product_category_name)
+ORDER BY merchandise_revenue DESC
+LIMIT 10;
 
-select count(*) as customer_without_order
-from customers c
-left join orders o
-on c.customer_id = o.customer_id
-where order_id is null;
+-- QUERY 13
+-- Business Question: Which categories have the highest average order review scores?
+-- Each order is counted once per category to avoid item-level row multiplication.
+WITH category_orders AS (
+    SELECT DISTINCT
+        p.product_category_name,
+        oi.order_id
+    FROM order_items oi
+    JOIN products p
+        ON oi.product_id = p.product_id
+),
+category_reviews AS (
+    SELECT
+        co.product_category_name,
+        r.order_id,
+        r.review_score
+    FROM category_orders co
+    JOIN order_reviews r
+        ON co.order_id = r.order_id
+    WHERE r.review_score IS NOT NULL
+)
+SELECT
+    COALESCE(pct.product_category_name_english, cr.product_category_name) AS product_category,
+    ROUND(AVG(cr.review_score), 2) AS avg_order_review_score,
+    COUNT(*) AS reviewed_orders
+FROM category_reviews cr
+LEFT JOIN product_category_translation pct
+    ON cr.product_category_name = pct.product_category_name
+GROUP BY COALESCE(pct.product_category_name_english, cr.product_category_name)
+HAVING COUNT(*) > 100
+ORDER BY avg_order_review_score DESC;
 
--- Top 20 customers ranked by spend --
+-- QUERY 14
+-- Business Question: What is the average number of items per order?
+SELECT
+    ROUND(COUNT(*) / NULLIF(COUNT(DISTINCT order_id), 0), 2) AS avg_items_per_order
+FROM order_items;
 
-select customer_unique_id, total_spend,
-rank() over(order by total_spend desc) as customer_rank 
-from (
-select sum(op.payment_value) as total_spend, c.customer_unique_id
-from order_payments op 
-join orders o on o.order_id=op.order_id
-join customers c on o.customer_id = c.customer_id
-group by c.customer_unique_id
-order by total_spend desc 
-) t
-limit 20;
+-- QUERY 15
+-- Business Question: What percentage of customers made more than one delivered purchase?
+-- Denominator: unique customers with at least one delivered order.
+WITH customer_orders AS (
+    SELECT
+        c.customer_unique_id,
+        COUNT(DISTINCT o.order_id) AS delivered_orders
+    FROM customers c
+    JOIN orders o
+        ON c.customer_id = o.customer_id
+    WHERE o.order_status = 'delivered'
+    GROUP BY c.customer_unique_id
+)
+SELECT
+    COUNT(*) AS customers_with_delivered_orders,
+    SUM(CASE WHEN delivered_orders > 1 THEN 1 ELSE 0 END) AS repeat_customers,
+    ROUND(
+        100.0 * SUM(CASE WHEN delivered_orders > 1 THEN 1 ELSE 0 END)
+        / NULLIF(COUNT(*), 0),
+        2
+    ) AS repeat_purchase_percentage
+FROM customer_orders;
+
+-- QUERY 16
+-- Business Question: What are the monthly order counts and payment values?
+SELECT
+    DATE_FORMAT(o.order_purchase_timestamp, '%Y-%m') AS purchase_month,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    ROUND(SUM(op.payment_value), 2) AS total_payment_value
+FROM orders o
+JOIN order_payments op
+    ON o.order_id = op.order_id
+GROUP BY DATE_FORMAT(o.order_purchase_timestamp, '%Y-%m')
+ORDER BY purchase_month;
+
+-- QUERY 17
+-- Business Question: Who are the top 10 unique customers by total recorded spend?
+SELECT
+    c.customer_unique_id,
+    ROUND(SUM(op.payment_value), 2) AS total_spend,
+    COUNT(DISTINCT o.order_id) AS total_orders
+FROM customers c
+JOIN orders o
+    ON c.customer_id = o.customer_id
+JOIN order_payments op
+    ON o.order_id = op.order_id
+GROUP BY c.customer_unique_id
+ORDER BY total_spend DESC
+LIMIT 10;
+
+-- QUERY 18
+-- Business Question: Which 10 sellers have the highest number of distinct orders?
+-- Revenue includes item price plus freight for each item sold.
+SELECT
+    seller_id,
+    COUNT(DISTINCT order_id) AS order_count,
+    ROUND(SUM(price + freight_value), 2) AS item_and_freight_revenue
+FROM order_items
+GROUP BY seller_id
+ORDER BY order_count DESC
+LIMIT 10;
+
+-- QUERY 19
+-- Business Question: How does the average review score change by review creation month?
+SELECT
+    DATE_FORMAT(review_creation_date, '%Y-%m') AS review_month,
+    ROUND(AVG(review_score), 2) AS avg_review_score,
+    COUNT(*) AS review_record_count
+FROM order_reviews
+WHERE review_score IS NOT NULL
+  AND review_creation_date IS NOT NULL
+GROUP BY DATE_FORMAT(review_creation_date, '%Y-%m')
+ORDER BY review_month;
+
+-- QUERY 20
+-- Business Question: Which five customer states have the highest late-delivery percentage?
+SELECT
+    c.customer_state,
+    COUNT(*) AS delivered_orders,
+    SUM(CASE
+            WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1
+            ELSE 0
+        END) AS late_orders,
+    ROUND(
+        100.0 * SUM(CASE
+                        WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1
+                        ELSE 0
+                    END) / NULLIF(COUNT(*), 0),
+        2
+    ) AS late_delivery_percentage
+FROM orders o
+JOIN customers c
+    ON o.customer_id = c.customer_id
+WHERE o.order_status = 'delivered'
+  AND o.order_delivered_customer_date IS NOT NULL
+  AND o.order_estimated_delivery_date IS NOT NULL
+GROUP BY c.customer_state
+ORDER BY late_delivery_percentage DESC
+LIMIT 5;
+
+-- QUERY 21
+-- Business Question: What is the average freight charge per order item by customer state?
+-- This is an item-level average, not an average per complete order.
+SELECT
+    c.customer_state,
+    ROUND(AVG(oi.freight_value), 2) AS avg_freight_per_item,
+    COUNT(*) AS item_count
+FROM order_items oi
+JOIN orders o
+    ON oi.order_id = o.order_id
+JOIN customers c
+    ON o.customer_id = c.customer_id
+GROUP BY c.customer_state
+ORDER BY avg_freight_per_item DESC;
+
+-- QUERY 22
+-- Business Question: What was the monthly average order value in 2017?
+SELECT
+    DATE_FORMAT(o.order_purchase_timestamp, '%Y-%m') AS purchase_month,
+    ROUND(SUM(op.payment_value) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS monthly_aov
+FROM orders o
+JOIN order_payments op
+    ON o.order_id = op.order_id
+WHERE o.order_purchase_timestamp >= '2017-01-01'
+  AND o.order_purchase_timestamp < '2018-01-01'
+GROUP BY DATE_FORMAT(o.order_purchase_timestamp, '%Y-%m')
+ORDER BY purchase_month;
+
+-- QUERY 23
+-- Business Question: Which product categories have the highest average item price?
+SELECT
+    COALESCE(pct.product_category_name_english, p.product_category_name) AS product_category,
+    ROUND(AVG(oi.price), 2) AS avg_item_price,
+    COUNT(*) AS item_count
+FROM order_items oi
+JOIN products p
+    ON oi.product_id = p.product_id
+LEFT JOIN product_category_translation pct
+    ON p.product_category_name = pct.product_category_name
+GROUP BY COALESCE(pct.product_category_name_english, p.product_category_name)
+HAVING COUNT(*) > 50
+ORDER BY avg_item_price DESC
+LIMIT 10;
+
+-- QUERY 24
+-- Business Question: Which customers placed delivered orders in two or more different months?
+WITH customer_months AS (
+    SELECT
+        c.customer_unique_id,
+        COUNT(DISTINCT DATE_FORMAT(o.order_purchase_timestamp, '%Y-%m')) AS months_active,
+        COUNT(DISTINCT o.order_id) AS delivered_order_count
+    FROM customers c
+    JOIN orders o
+        ON c.customer_id = o.customer_id
+    WHERE o.order_status = 'delivered'
+    GROUP BY c.customer_unique_id
+)
+SELECT
+    customer_unique_id,
+    months_active,
+    delivered_order_count
+FROM customer_months
+WHERE months_active >= 2
+ORDER BY months_active DESC, delivered_order_count DESC
+LIMIT 10;
+
+-- QUERY 25
+-- Business Question: Which five sellers have the highest average order review scores,
+-- considering sellers with at least 20 reviewed orders?
+-- Important: the review is order-level, not seller-specific.
+WITH seller_orders AS (
+    SELECT DISTINCT seller_id, order_id
+    FROM order_items
+),
+seller_reviews AS (
+    SELECT
+        so.seller_id,
+        so.order_id,
+        r.review_score
+    FROM seller_orders so
+    JOIN order_reviews r
+        ON so.order_id = r.order_id
+    WHERE r.review_score IS NOT NULL
+)
+SELECT
+    seller_id,
+    ROUND(AVG(review_score), 2) AS avg_order_review_score,
+    COUNT(*) AS reviewed_orders
+FROM seller_reviews
+GROUP BY seller_id
+HAVING COUNT(*) >= 20
+ORDER BY avg_order_review_score DESC
+LIMIT 5;
+
+-- QUERY 26
+-- Business Question: How many customer records have no matching order?
+-- Olist's customers table has customer_id records associated with orders;
+-- this should not be described as registered users without a purchase.
+SELECT
+    COUNT(*) AS customer_records_without_order
+FROM customers c
+LEFT JOIN orders o
+    ON c.customer_id = o.customer_id
+WHERE o.order_id IS NULL;
+
+-- QUERY 27
+-- Business Question: Rank the top 20 unique customers by total recorded spend.
+WITH customer_spending AS (
+    SELECT
+        c.customer_unique_id,
+        SUM(op.payment_value) AS total_spend
+    FROM customers c
+    JOIN orders o
+        ON c.customer_id = o.customer_id
+    JOIN order_payments op
+        ON o.order_id = op.order_id
+    GROUP BY c.customer_unique_id
+),
+ranked_customers AS (
+    SELECT
+        customer_unique_id,
+        ROUND(total_spend, 2) AS total_spend,
+        ROW_NUMBER() OVER (ORDER BY total_spend DESC) AS customer_rank
+    FROM customer_spending
+)
+SELECT
+    customer_unique_id,
+    total_spend,
+    customer_rank
+FROM ranked_customers
+WHERE customer_rank <= 20
+ORDER BY customer_rank;
+
+-- ============================================================
+-- END OF PROJECT SQL SCRIPT
+-- ============================================================

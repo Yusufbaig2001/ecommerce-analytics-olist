@@ -223,12 +223,17 @@ from ranked
 where rn in (floor((total+1)/2),ceil((total+1)/2));
 
 -- the median values is inserted inplace of null values--
-update products
-set product_weight_g = 700,
-product_length_cm = 25, 
-product_height_cm =13,
-product_width_cm = 20
-where product_weight_g is null;
+UPDATE products
+SET
+    product_weight_g = COALESCE(product_weight_g, 700),
+    product_length_cm = COALESCE(product_length_cm, 25),
+    product_height_cm = COALESCE(product_height_cm, 13),
+    product_width_cm = COALESCE(product_width_cm, 20)
+WHERE
+    product_weight_g IS NULL
+    OR product_length_cm IS NULL
+    OR product_height_cm IS NULL
+    OR product_width_cm IS NULL;
 
 -- in products table the column name has spellig mistake length ---
 alter table products 

@@ -1,6 +1,6 @@
 # Power BI Dashboard — E-Commerce Analytics (Olist)
 
-Interactive 3-page dashboard analyzing 100K+ e-commerce orders.
+Interactive 4-page dashboard analyzing 100K+ e-commerce orders.
 
 ## 📊 Dashboard Pages
 
